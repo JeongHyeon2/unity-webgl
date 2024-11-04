@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Unity, useUnityContext } from "react-unity-webgl";
+import VoiceChat from "./WebRTCChat";
 
 function ShowUnity({ roomCode }) {
   const { unityProvider, isLoaded, sendMessage } = useUnityContext({
@@ -52,6 +53,7 @@ function ShowUnity({ roomCode }) {
             unityProvider={unityProvider}
             style={{ width: "100%", height: "100%" }}
           />
+          <VoiceChat roomId={roomCode}></VoiceChat>
         </div>
       )}
       {!isUnityReady && !showRoomSelection && (
