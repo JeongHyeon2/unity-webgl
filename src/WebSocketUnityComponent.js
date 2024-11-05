@@ -1,17 +1,21 @@
 import React, { useEffect, useState } from "react";
 import ShowUnity from "./ShowUnity"; // ShowUnity 컴포넌트 임포트
+import "./WebSocketUnityComponent.css"; // Import the CSS file
 
 // 로그인 화면 컴포넌트
 const LoginComponent = ({ userId, setUserId, handleLogin }) => (
-  <div>
+  <div className="login-container">
     <h2>Login with your ID</h2>
     <input
       type="text"
       placeholder="Your ID"
       value={userId}
       onChange={(e) => setUserId(e.target.value)}
+      className="login-input"
     />
-    <button onClick={handleLogin}>Login</button>
+    <button onClick={handleLogin} className="login-button">
+      Login
+    </button>
   </div>
 );
 
@@ -20,48 +24,46 @@ const NotificationComponent = ({
   userId,
   toUserId,
   setToUserId,
-  inputMessage,
-  setInputMessage,
   sendNotification,
   notifications,
   currentNotification,
   handleResponse,
 }) => (
-  <div>
+  <div className="notification-container">
     <h2>Logged in as {userId}</h2>
     <input
       type="text"
-      placeholder="Recipient ID (optional)"
+      placeholder="Recipient ID"
       value={toUserId}
       onChange={(e) => setToUserId(e.target.value)}
+      className="notification-input"
     />
-    <input
-      type="text"
-      value={inputMessage}
-      onChange={(e) => setInputMessage(e.target.value)}
-      placeholder="Enter notification message"
-    />
-    <button onClick={sendNotification}>Send Notification</button>
+    <button onClick={sendNotification} className="notification-button">
+      Send Notification
+    </button>
 
     <h3>Notifications:</h3>
-    <div
-      style={{
-        border: "1px solid black",
-        height: "200px",
-        overflowY: "scroll",
-        padding: "10px",
-      }}
-    >
+    <div className="notification-list">
       {notifications.map((notification, index) => (
         <p key={index}>{notification}</p>
       ))}
     </div>
 
     {currentNotification && (
-      <div>
+      <div className="current-notification">
         <h3>New Notification: {currentNotification}</h3>
-        <button onClick={() => handleResponse("Accepted")}>Accept</button>
-        <button onClick={() => handleResponse("Rejected")}>Reject</button>
+        <button
+          onClick={() => handleResponse("Accepted")}
+          className="response-button"
+        >
+          Accept
+        </button>
+        <button
+          onClick={() => handleResponse("Rejected")}
+          className="response-button reject"
+        >
+          Reject
+        </button>
       </div>
     )}
   </div>
@@ -71,7 +73,6 @@ const WebSocketUnityComponent = () => {
   const [userId, setUserId] = useState(""); // 내 ID
   const [toUserId, setToUserId] = useState(""); // 상대방 ID
   const [socket, setSocket] = useState(null);
-  const [inputMessage, setInputMessage] = useState(""); // 보낼 메시지
   const [connected, setConnected] = useState(false);
   const [notifications, setNotifications] = useState([]); // 알림 저장
   const [currentNotification, setCurrentNotification] = useState(null); // 현재 알림
@@ -144,10 +145,9 @@ const WebSocketUnityComponent = () => {
 
   // 요청 전송
   const sendNotification = () => {
-    if (socket && inputMessage) {
-      const targetUserId = toUserId ? `TO:${toUserId}` : "TO:ALL";
-      socket.send(`ALERT:${targetUserId}|MESSAGE:${inputMessage}`);
-      setInputMessage("");
+    if (socket && toUserId) {
+      socket.send(`ALERT:TO:${toUserId}|MESSAGE:New notification`);
+      setToUserId(""); // 전송 후 Recipient ID 초기화
     }
   };
 
@@ -165,7 +165,7 @@ const WebSocketUnityComponent = () => {
   };
 
   return (
-    <div>
+    <div className="websocket-unity-container">
       {!connected ? (
         <LoginComponent
           userId={userId}
@@ -177,15 +177,16 @@ const WebSocketUnityComponent = () => {
           userId={userId}
           toUserId={toUserId}
           setToUserId={setToUserId}
-          inputMessage={inputMessage}
-          setInputMessage={setInputMessage}
           sendNotification={sendNotification}
           notifications={notifications}
           currentNotification={currentNotification}
           handleResponse={handleResponse}
         />
       ) : (
-        <ShowUnity roomCode={roomCode} /> // ShowUnity 컴포넌트로 roomCode 전달
+        <div className="show-unity-fullscreen">
+          <ShowUnity roomCode={roomCode} />{" "}
+          {/* ShowUnity 컴포넌트로 roomCode 전달 */}
+        </div>
       )}
     </div>
   );

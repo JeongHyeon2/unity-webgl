@@ -1,0 +1,111 @@
+.voice-chat-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    background-color: #f7f9fc;
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+    max-width: 500px;
+    margin: auto;
+  }
+  
+  .voice-chat-title {
+    font-size: 24px;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 20px;
+  }
+  
+  .join-room-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .room-input {
+    padding: 10px;
+    font-size: 16px;
+    width: 100%;
+    max-width: 250px;
+    margin-bottom: 15px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    outline: none;
+  }
+  
+  .room-input:focus {
+    border-color: #007bff;
+    box-shadow: 0 0 8px rgba(0, 123, 255, 0.3);
+  }
+  
+  .chat-button {
+    background: linear-gradient(135deg, #007bff, #4a90e2);
+    color: white;
+    padding: 10px 20px;
+    font-size: 16px;
+    font-weight: bold;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background 0.3s ease;
+    margin: 5px;
+  }
+  
+  .chat-button:hover {
+    background: linear-gradient(135deg, #0056b3, #007bff);
+  }
+  
+  .connection-status {
+    font-size: 16px;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 10px;
+  }
+  
+  .volume-display h3,
+  .transcript-display h3,
+  .language-select h3 {
+    font-size: 16px;
+    color: #555;
+    margin: 8px 0;
+  }
+  
+  .language-select {
+    margin-top: 10px;
+    text-align: center;
+  }
+  
+  .language-dropdown {
+    padding: 8px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    outline: none;
+    font-size: 14px;
+  }
+  
+  .language-dropdown:focus {
+    border-color: #007bff;
+    box-shadow: 0 0 5px rgba(0, 123, 255, 0.3);
+  }
+  
+  .audio-section {
+    margin-top: 20px;
+    text-align: center;
+  }
+  
+  .audio-section h2 {
+    font-size: 18px;
+    color: #333;
+  }
+  
+  .transcript-display p {
+    background-color: #e9ecef;
+    padding: 10px;
+    border-radius: 5px;
+    font-size: 14px;
+    color: #333;
+    max-height: 100px;
+    overflow-y: auto;
+  }
+  

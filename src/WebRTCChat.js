@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import "./WebRTCChat.css"; // Import the CSS file
 
 const VoiceChat = ({ roomId: initialRoomId }) => {
   const [isConnected, setIsConnected] = useState(false);
@@ -341,39 +342,58 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
   };
 
   return (
-    <div>
-      <h1>1:1 Voice Chat</h1>
+    <div className="voice-chat-container">
+      <h1 className="voice-chat-title">1:1 Voice Chat</h1>
       {!hasJoinedRoom ? (
-        <div>
+        <div className="join-room-container">
           <input
             type="text"
             placeholder="Enter Room ID"
             value={roomId}
             onChange={(e) => setRoomId(e.target.value)}
+            className="room-input"
           />
-          <button onClick={joinRoom}>Join Room</button>
+          <button onClick={joinRoom} className="chat-button">
+            Join Room
+          </button>
         </div>
       ) : (
-        <div>
-          <p>Connection status: {isConnected ? "Connected" : "Disconnected"}</p>
-          <button onClick={startCall} disabled={isAudioOn || !isConnected}>
+        <div className="chat-controls">
+          <p className="connection-status">
+            Connection status: {isConnected ? "Connected" : "Disconnected"}
+          </p>
+          <button
+            onClick={startCall}
+            disabled={isAudioOn || !isConnected}
+            className="chat-button"
+          >
             Start Call
           </button>
-          <button onClick={endCall} disabled={!isAudioOn}>
+          <button
+            onClick={endCall}
+            disabled={!isAudioOn}
+            className="chat-button"
+          >
             End Call
           </button>
-          <button onClick={toggleMute}>{isMuted ? "Unmute" : "Mute"}</button>
-          <div>
+          <button onClick={toggleMute} className="chat-button">
+            {isMuted ? "Unmute" : "Mute"}
+          </button>
+          <div className="volume-display">
             <h3>Your Voice Volume: {Math.round(localVolume)}</h3>
             <h3>Remote Voice Volume: {Math.round(remoteVolume)}</h3>
           </div>
-          <div>
+          <div className="transcript-display">
             <h3>Transcript (STT 결과):</h3>
             <p>{transcript}</p>
           </div>
-          <div>
+          <div className="language-select">
             <h3>Select Language:</h3>
-            <select value={selectedLanguage} onChange={handleLanguageChange}>
+            <select
+              value={selectedLanguage}
+              onChange={handleLanguageChange}
+              className="language-dropdown"
+            >
               {languages.map((language) => (
                 <option key={language.code} value={language.code}>
                   {language.label}
@@ -383,11 +403,11 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
           </div>
         </div>
       )}
-      <div>
+      <div className="audio-section">
         <h2>Your Audio</h2>
         <audio ref={localAudioRef} autoPlay muted></audio>
       </div>
-      <div>
+      <div className="audio-section">
         <h2>Remote Audio</h2>
         <audio ref={remoteAudioRef} autoPlay></audio>
       </div>
