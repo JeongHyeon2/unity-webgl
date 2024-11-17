@@ -201,6 +201,8 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
+        echoCancellationType: "system",
+        suppressLocalAudioPlayback: true,
       },
     });
 
@@ -357,7 +359,19 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
     const audioContext = new AudioContext();
     const analyser = audioContext.createAnalyser();
     const source = audioContext.createMediaStreamSource(stream);
-    source.connect(analyser);
+
+    // 노이즈 게이트 추가
+    const gainNode = audioContext.createGain();
+    gainNode.gain.value = 0.8;
+
+    // 필터 추가
+    const filter = audioContext.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 2000;
+
+    source.connect(filter);
+    filter.connect(gainNode);
+    gainNode.connect(analyser);
 
     localAudioContextRef.current = { audioContext, analyser };
 
@@ -414,30 +428,18 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
       (lang) => lang.code === selectedLanguage
     );
 
-    Object.assign(recognition, selectedLang.sttConfig);
     recognition.lang = selectedLang.code;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
+    recognition.interimResults = false;
 
     recognition.onstart = () => {
       console.log(`STT started for ${selectedLang.label}`);
     };
 
     recognition.onresult = (event) => {
-      let interimTranscript = "";
-      let finalTranscript = "";
-
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        const result = event.results[i];
-        if (result.isFinal) {
-          finalTranscript += result[0].transcript;
-        } else {
-          interimTranscript += result[0].transcript;
-        }
-      }
-
-      setTranscript((prev) => {
-        const newTranscript = prev + finalTranscript;
-        return newTranscript.slice(-500) + interimTranscript;
-      });
+      const result = event.results[0][0].transcript;
+      setTranscript((prev) => prev + result + "\n");
     };
 
     recognition.onerror = (event) => {
@@ -453,16 +455,18 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
 
     recognition.onend = () => {
       if (isAudioOn) {
-        try {
-          recognition.start();
-        } catch (e) {
-          console.error("Failed to restart STT:", e);
-          setTimeout(() => {
-            if (isAudioOn) {
-              startSpeechRecognition();
-            }
-          }, 1000);
-        }
+        setTimeout(() => {
+          try {
+            recognition.start();
+          } catch (e) {
+            console.error("Failed to restart STT:", e);
+            setTimeout(() => {
+              if (isAudioOn) {
+                startSpeechRecognition();
+              }
+            }, 1000);
+          }
+        }, 1000); // 1초 딜레이 추가
       }
     };
 
