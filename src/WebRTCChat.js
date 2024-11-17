@@ -226,11 +226,6 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
         answer: answer,
       })
     );
-
-    // 여기에 상태 변경 추가
-    setCallState("connected");
-    setIsAudioOn(true);
-    startSpeechRecognition(); // STT도 시작
   };
 
   const handleAnswer = async (answer) => {
