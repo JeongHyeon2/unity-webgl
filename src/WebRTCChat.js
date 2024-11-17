@@ -1,16 +1,18 @@
 import React, { useState, useEffect, useRef } from "react";
-import "./WebRTCChat.css"; // Import the CSS file
+import "./WebRTCChat.css";
 
 const VoiceChat = ({ roomId: initialRoomId }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isAudioOn, setIsAudioOn] = useState(false);
-  const [roomId, setRoomId] = useState(initialRoomId || ""); // 초기 roomId를 설정
-  const [hasJoinedRoom, setHasJoinedRoom] = useState(!!initialRoomId); // roomId가 있을 경우 자동으로 참가된 상태로 설정
+  const [roomId, setRoomId] = useState(initialRoomId || "");
+  const [hasJoinedRoom, setHasJoinedRoom] = useState(!!initialRoomId);
   const [localVolume, setLocalVolume] = useState(0);
   const [remoteVolume, setRemoteVolume] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [selectedLanguage, setSelectedLanguage] = useState("en-US");
+  const [callState, setCallState] = useState("idle"); // idle, calling, receiving, connected
+  const [remoteReady, setRemoteReady] = useState(false);
 
   const localAudioRef = useRef(null);
   const remoteAudioRef = useRef(null);
@@ -19,7 +21,7 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
   const localAudioContextRef = useRef(null);
   const remoteAudioContextRef = useRef(null);
   const recognitionRef = useRef(null);
-  const [isInitiator, setIsInitiator] = useState(false);
+  const localStreamRef = useRef(null);
 
   const languages = [
     { code: "en-US", label: "English" },
@@ -29,6 +31,49 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
     { code: "ja-JP", label: "Japanese" },
     { code: "zh-CN", label: "Chinese (Simplified)" },
   ];
+
+  const createPeerConnection = () => {
+    const peerConnection = new RTCPeerConnection({
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+        { urls: "stun:stun2.l.google.com:19302" },
+        { urls: "stun:stun3.l.google.com:19302" },
+        { urls: "stun:stun4.l.google.com:19302" },
+      ],
+      iceTransportPolicy: "all",
+      iceCandidatePoolSize: 10,
+      bundlePolicy: "max-bundle",
+      rtcpMuxPolicy: "require",
+    });
+
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate && webSocketRef.current) {
+        webSocketRef.current.send(
+          JSON.stringify({
+            type: "ice-candidate",
+            candidate: event.candidate,
+          })
+        );
+      }
+    };
+
+    peerConnection.oniceconnectionstatechange = () => {
+      console.log("ICE Connection State:", peerConnection.iceConnectionState);
+      if (peerConnection.iceConnectionState === "failed") {
+        peerConnection.restartIce();
+      }
+    };
+
+    peerConnection.ontrack = (event) => {
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = event.streams[0];
+        setupRemoteAudioAnalyser(event.streams[0]);
+      }
+    };
+
+    return peerConnection;
+  };
 
   const joinRoom = () => {
     if (roomId.trim() === "") {
@@ -44,57 +89,90 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
     webSocket.onopen = () => {
       setIsConnected(true);
       console.log("WebSocket connected");
-      setIsInitiator(true);
     };
 
-    webSocket.onmessage = (message) => {
+    webSocket.onmessage = async (message) => {
       const data = JSON.parse(message.data);
-      if (data.type === "offer") {
-        handleOffer(data.offer);
-      } else if (data.type === "answer") {
-        handleAnswer(data.answer);
-      } else if (data.type === "ice-candidate") {
-        handleNewICECandidateMsg(data.candidate);
+
+      switch (data.type) {
+        case "call-request":
+          setCallState("receiving");
+          break;
+
+        case "call-accept":
+          setRemoteReady(true);
+          if (callState === "calling") {
+            await startCall();
+          }
+          break;
+
+        case "offer":
+          await handleOffer(data.offer);
+          break;
+
+        case "answer":
+          await handleAnswer(data.answer);
+          break;
+
+        case "ice-candidate":
+          await handleNewICECandidateMsg(data.candidate);
+          break;
+
+        case "call-end":
+          handleCallEnd();
+          break;
       }
     };
 
     webSocket.onclose = () => {
       setIsConnected(false);
       console.log("WebSocket disconnected");
+      handleCallEnd();
     };
 
     setHasJoinedRoom(true);
   };
 
-  useEffect(() => {
-    if (initialRoomId) {
-      joinRoom();
-    }
+  const requestCall = async () => {
+    if (!webSocketRef.current) return;
 
-    return () => {
-      if (webSocketRef.current) {
-        webSocketRef.current.close();
-      }
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
-    };
-  }, [initialRoomId]);
+    setCallState("calling");
+    webSocketRef.current.send(
+      JSON.stringify({
+        type: "call-request",
+        roomId: roomId,
+      })
+    );
+  };
+
+  const acceptCall = async () => {
+    if (!webSocketRef.current) return;
+
+    setCallState("connected");
+    webSocketRef.current.send(
+      JSON.stringify({
+        type: "call-accept",
+        roomId: roomId,
+      })
+    );
+
+    await startCall();
+  };
 
   const handleOffer = async (offer) => {
     const peerConnection = createPeerConnection();
     peerConnectionRef.current = peerConnection;
     await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
 
-    // 상대방도 로컬 오디오 트랙을 추가
     const localStream = await navigator.mediaDevices.getUserMedia({
       audio: {
-        echoCancellation: true, // 에코 제거
-        noiseSuppression: true, // 소음 감소
-        autoGainControl: true, // 자동 게인 조절
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
       },
     });
 
+    localStreamRef.current = localStream;
     localStream
       .getTracks()
       .forEach((track) => peerConnection.addTrack(track, localStream));
@@ -103,9 +181,8 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
       localAudioRef.current.srcObject = localStream;
     }
 
-    setupLocalAudioAnalyser(localStream); // 내 목소리 분석기 설정
+    setupLocalAudioAnalyser(localStream);
 
-    // answer 생성 및 전송
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
 
@@ -115,64 +192,137 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
         answer: answer,
       })
     );
-
-    // 상대방의 트랙 처리
-    peerConnection.ontrack = (event) => {
-      console.log("Remote track received:", event.streams[0]);
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.srcObject = event.streams[0];
-        setupRemoteAudioAnalyser(event.streams[0]); // 상대방 음성 분석기 설정
-      }
-    };
   };
 
   const handleAnswer = async (answer) => {
     const peerConnection = peerConnectionRef.current;
-    await peerConnection.setRemoteDescription(
-      new RTCSessionDescription(answer)
-    );
+    if (peerConnection) {
+      await peerConnection.setRemoteDescription(
+        new RTCSessionDescription(answer)
+      );
+    }
   };
 
   const handleNewICECandidateMsg = async (candidate) => {
     const peerConnection = peerConnectionRef.current;
-    try {
-      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-    } catch (e) {
-      console.error("Error adding received ICE candidate", e);
+    if (peerConnection) {
+      try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (e) {
+        console.error("Error adding received ICE candidate", e);
+      }
     }
   };
 
-  const createPeerConnection = () => {
-    const peerConnection = new RTCPeerConnection({
-      iceServers: [
-        {
-          urls: "stun:stun.l.google.com:19302",
+  const startCall = async () => {
+    const peerConnection = createPeerConnection();
+    peerConnectionRef.current = peerConnection;
+
+    try {
+      const localStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
         },
-      ],
-    });
+      });
 
-    peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        webSocketRef.current.send(
-          JSON.stringify({
-            type: "ice-candidate",
-            candidate: event.candidate,
-          })
-        );
+      localStreamRef.current = localStream;
+      localStream
+        .getTracks()
+        .forEach((track) => peerConnection.addTrack(track, localStream));
+
+      if (localAudioRef.current) {
+        localAudioRef.current.srcObject = localStream;
       }
-    };
 
-    peerConnection.ontrack = (event) => {
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.srcObject = event.streams[0];
-        setupRemoteAudioAnalyser(event.streams[0]); // 상대방 음성 분석기 설정
-      }
-    };
+      setupLocalAudioAnalyser(localStream);
+      startSpeechRecognition();
 
-    return peerConnection;
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+
+      webSocketRef.current.send(
+        JSON.stringify({
+          type: "offer",
+          offer: offer,
+        })
+      );
+
+      setIsAudioOn(true);
+    } catch (error) {
+      console.error("Error starting call:", error);
+      handleCallEnd();
+    }
+  };
+
+  const handleCallEnd = () => {
+    cleanupCall();
+    setCallState("idle");
+    setRemoteReady(false);
+  };
+
+  const cleanupCall = () => {
+    // 오디오 트랙 정리
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
+    }
+
+    // 피어 커넥션 정리
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+
+    // 오디오 엘리먼트 정리
+    if (localAudioRef.current) {
+      localAudioRef.current.srcObject = null;
+    }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = null;
+    }
+
+    // 오디오 컨텍스트 정리
+    if (localAudioContextRef.current?.audioContext) {
+      localAudioContextRef.current.audioContext.close();
+    }
+    if (remoteAudioContextRef.current?.audioContext) {
+      remoteAudioContextRef.current.audioContext.close();
+    }
+
+    // 음성 인식 정리
+    stopSpeechRecognition();
+
+    setIsAudioOn(false);
+  };
+
+  const endCall = () => {
+    if (webSocketRef.current) {
+      webSocketRef.current.send(
+        JSON.stringify({
+          type: "call-end",
+          roomId: roomId,
+        })
+      );
+    }
+    handleCallEnd();
+  };
+
+  const toggleMute = () => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = !track.enabled;
+      });
+      setIsMuted(!isMuted);
+    }
   };
 
   const setupLocalAudioAnalyser = (stream) => {
+    if (localAudioContextRef.current?.audioContext) {
+      localAudioContextRef.current.audioContext.close();
+    }
+
     const audioContext = new AudioContext();
     const analyser = audioContext.createAnalyser();
     const source = audioContext.createMediaStreamSource(stream);
@@ -181,18 +331,23 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
     localAudioContextRef.current = { audioContext, analyser };
 
     const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
     const updateVolume = () => {
       analyser.getByteFrequencyData(dataArray);
       const volume = dataArray.reduce((a, b) => a + b) / dataArray.length;
       setLocalVolume(volume);
-      requestAnimationFrame(updateVolume);
+      if (isAudioOn) {
+        requestAnimationFrame(updateVolume);
+      }
     };
 
     updateVolume();
   };
 
   const setupRemoteAudioAnalyser = (stream) => {
+    if (remoteAudioContextRef.current?.audioContext) {
+      remoteAudioContextRef.current.audioContext.close();
+    }
+
     const audioContext = new AudioContext();
     const analyser = audioContext.createAnalyser();
     const source = audioContext.createMediaStreamSource(stream);
@@ -201,30 +356,28 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
     remoteAudioContextRef.current = { audioContext, analyser };
 
     const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
     const updateVolume = () => {
       analyser.getByteFrequencyData(dataArray);
       const volume = dataArray.reduce((a, b) => a + b) / dataArray.length;
       setRemoteVolume(volume);
-      requestAnimationFrame(updateVolume);
+      if (isAudioOn) {
+        requestAnimationFrame(updateVolume);
+      }
     };
 
     updateVolume();
   };
 
-  // STT 기능을 위한 함수
   const startSpeechRecognition = () => {
     if (!("webkitSpeechRecognition" in window)) {
-      alert("이 브라우저는 Speech Recognition을 지원하지 않습니다.");
+      alert("This browser doesn't support Speech Recognition.");
       return;
     }
 
-    const SpeechRecognition = window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-
-    recognition.continuous = true; // 연속 인식
-    recognition.interimResults = true; // 중간 결과 제공
-    recognition.lang = selectedLanguage; // 선택된 언어 설정
+    const recognition = new window.webkitSpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = selectedLanguage;
 
     recognition.onresult = (event) => {
       let interimTranscript = "";
@@ -246,8 +399,9 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
     };
 
     recognition.onend = () => {
-      // 음성 인식이 종료되면 다시 시작
-      recognition.start();
+      if (isAudioOn) {
+        recognition.start();
+      }
     };
 
     recognition.start();
@@ -259,87 +413,29 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
       recognitionRef.current.stop();
       recognitionRef.current = null;
     }
+    setTranscript("");
   };
 
-  // 언어 변경 시 STT를 중지하고 새로운 언어로 재시작
   const handleLanguageChange = (e) => {
     setSelectedLanguage(e.target.value);
-
-    // 음성 인식 중지 후 재시작
     if (isAudioOn) {
       stopSpeechRecognition();
       startSpeechRecognition();
     }
   };
 
-  // startCall 함수에 STT 시작 코드 추가
-  const startCall = async () => {
-    const peerConnection = createPeerConnection();
-    peerConnectionRef.current = peerConnection;
-
-    // 에코 제거 및 소음 감소 설정
-    const localStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true, // 에코 제거
-        noiseSuppression: true, // 소음 감소
-        autoGainControl: true, // 자동 게인 조절
-      },
-    });
-
-    localStream
-      .getTracks()
-      .forEach((track) => peerConnection.addTrack(track, localStream));
-
-    if (localAudioRef.current) {
-      localAudioRef.current.srcObject = localStream;
+  useEffect(() => {
+    if (initialRoomId) {
+      joinRoom();
     }
 
-    setupLocalAudioAnalyser(localStream); // 내 목소리 분석기 설정
-
-    // 음성 인식 시작
-    startSpeechRecognition();
-
-    if (isInitiator) {
-      const offer = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(offer);
-
-      webSocketRef.current.send(
-        JSON.stringify({
-          type: "offer",
-          offer: offer,
-        })
-      );
-    } else {
-      webSocketRef.current.send(
-        JSON.stringify({
-          type: "ready",
-        })
-      );
-    }
-
-    setIsAudioOn(true); // 통화 상태 업데이트
-  };
-
-  // endCall 함수에 STT 중지 코드 추가
-  const endCall = () => {
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
-    setIsAudioOn(false);
-
-    // 음성 인식 중지
-    stopSpeechRecognition();
-  };
-
-  const toggleMute = () => {
-    if (localAudioRef.current && localAudioRef.current.srcObject) {
-      localAudioRef.current.srcObject.getAudioTracks().forEach((track) => {
-        track.enabled = !track.enabled;
-      });
-      setIsMuted(!isMuted);
-    }
-  };
+    return () => {
+      cleanupCall();
+      if (webSocketRef.current) {
+        webSocketRef.current.close();
+      }
+    };
+  }, [initialRoomId]);
 
   return (
     <div className="voice-chat-container">
@@ -362,31 +458,67 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
           <p className="connection-status">
             Connection status: {isConnected ? "Connected" : "Disconnected"}
           </p>
-          <button
-            onClick={startCall}
-            disabled={isAudioOn || !isConnected}
-            className="chat-button"
-          >
-            Start Call
-          </button>
-          <button
-            onClick={endCall}
-            disabled={!isAudioOn}
-            className="chat-button"
-          >
-            End Call
-          </button>
-          <button onClick={toggleMute} className="chat-button">
-            {isMuted ? "Unmute" : "Mute"}
-          </button>
+
+          {callState === "idle" && (
+            <button
+              onClick={requestCall}
+              disabled={!isConnected}
+              className="chat-button"
+            >
+              Start Call
+            </button>
+          )}
+          {callState === "receiving" && (
+            <div className="call-request">
+              <p>Incoming call...</p>
+              <button onClick={acceptCall} className="chat-button">
+                Accept
+              </button>
+              <button
+                onClick={() => setCallState("idle")}
+                className="chat-button reject"
+              >
+                Decline
+              </button>
+            </div>
+          )}
+
+          {callState === "calling" && (
+            <div className="call-status">
+              <p>Waiting for answer...</p>
+              <button
+                onClick={() => {
+                  setCallState("idle");
+                  cleanupCall();
+                }}
+                className="chat-button"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+
+          {callState === "connected" && (
+            <>
+              <button onClick={endCall} className="chat-button">
+                End Call
+              </button>
+              <button onClick={toggleMute} className="chat-button">
+                {isMuted ? "Unmute" : "Mute"}
+              </button>
+            </>
+          )}
+
           <div className="volume-display">
             <h3>Your Voice Volume: {Math.round(localVolume)}</h3>
             <h3>Remote Voice Volume: {Math.round(remoteVolume)}</h3>
           </div>
+
           <div className="transcript-display">
-            <h3>Transcript (STT 결과):</h3>
+            <h3>Transcript:</h3>
             <p>{transcript}</p>
           </div>
+
           <div className="language-select">
             <h3>Select Language:</h3>
             <select
@@ -403,12 +535,9 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
           </div>
         </div>
       )}
-      <div className="audio-section">
-        <h2>Your Audio</h2>
+
+      <div className="audio-section" style={{ display: "none" }}>
         <audio ref={localAudioRef} autoPlay muted></audio>
-      </div>
-      <div className="audio-section">
-        <h2>Remote Audio</h2>
         <audio ref={remoteAudioRef} autoPlay></audio>
       </div>
     </div>
