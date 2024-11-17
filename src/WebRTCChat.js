@@ -10,8 +10,8 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
   const [remoteVolume, setRemoteVolume] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [transcript, setTranscript] = useState("");
-  const [selectedLanguage, setSelectedLanguage] = useState("en-US");
-  const [callState, setCallState] = useState("idle"); // idle, calling, receiving, connected
+  const [selectedLanguage, setSelectedLanguage] = useState("ko-KR");
+  const [callState, setCallState] = useState("idle");
   const [remoteReady, setRemoteReady] = useState(false);
 
   const localAudioRef = useRef(null);
@@ -24,12 +24,39 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
   const localStreamRef = useRef(null);
 
   const languages = [
-    { code: "en-US", label: "English" },
-    { code: "ko-KR", label: "Korean" },
-    { code: "es-ES", label: "Spanish" },
-    { code: "fr-FR", label: "French" },
-    { code: "ja-JP", label: "Japanese" },
-    { code: "zh-CN", label: "Chinese (Simplified)" },
+    {
+      code: "ko-KR",
+      label: "한국어",
+      sttConfig: {
+        continuous: true,
+        interimResults: true,
+      },
+    },
+    {
+      code: "en-US",
+      label: "English",
+      sttConfig: {
+        continuous: true,
+        interimResults: true,
+      },
+    },
+    {
+      code: "zh-CN",
+      label: "中文",
+      sttConfig: {
+        continuous: true,
+        interimResults: true,
+        maxAlternatives: 1,
+      },
+    },
+    {
+      code: "ja-JP",
+      label: "日本語",
+      sttConfig: {
+        continuous: true,
+        interimResults: true,
+      },
+    },
   ];
 
   const createPeerConnection = () => {
@@ -127,6 +154,11 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
     webSocket.onclose = () => {
       setIsConnected(false);
       console.log("WebSocket disconnected");
+      handleCallEnd();
+    };
+
+    webSocket.onerror = (error) => {
+      console.error("WebSocket error:", error);
       handleCallEnd();
     };
 
@@ -263,19 +295,16 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
   };
 
   const cleanupCall = () => {
-    // 오디오 트랙 정리
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => track.stop());
       localStreamRef.current = null;
     }
 
-    // 피어 커넥션 정리
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
     }
 
-    // 오디오 엘리먼트 정리
     if (localAudioRef.current) {
       localAudioRef.current.srcObject = null;
     }
@@ -283,7 +312,6 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
       remoteAudioRef.current.srcObject = null;
     }
 
-    // 오디오 컨텍스트 정리
     if (localAudioContextRef.current?.audioContext) {
       localAudioContextRef.current.audioContext.close();
     }
@@ -291,9 +319,7 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
       remoteAudioContextRef.current.audioContext.close();
     }
 
-    // 음성 인식 정리
     stopSpeechRecognition();
-
     setIsAudioOn(false);
   };
 
@@ -374,38 +400,73 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
       return;
     }
 
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+
     const recognition = new window.webkitSpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = selectedLanguage;
+    const selectedLang = languages.find(
+      (lang) => lang.code === selectedLanguage
+    );
+
+    Object.assign(recognition, selectedLang.sttConfig);
+    recognition.lang = selectedLang.code;
+
+    recognition.onstart = () => {
+      console.log(`STT started for ${selectedLang.label}`);
+    };
 
     recognition.onresult = (event) => {
       let interimTranscript = "";
       let finalTranscript = "";
 
       for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
+        const result = event.results[i];
+        if (result.isFinal) {
+          finalTranscript += result[0].transcript;
         } else {
-          interimTranscript += event.results[i][0].transcript;
+          interimTranscript += result[0].transcript;
         }
       }
 
-      setTranscript(finalTranscript + interimTranscript);
+      setTranscript((prev) => {
+        const newTranscript = prev + finalTranscript;
+        return newTranscript.slice(-500) + interimTranscript;
+      });
     };
 
     recognition.onerror = (event) => {
       console.error("Speech Recognition Error:", event.error);
+      if (event.error === "no-speech" || event.error === "network") {
+        setTimeout(() => {
+          if (isAudioOn && recognitionRef.current) {
+            recognition.start();
+          }
+        }, 1000);
+      }
     };
 
     recognition.onend = () => {
       if (isAudioOn) {
-        recognition.start();
+        try {
+          recognition.start();
+        } catch (e) {
+          console.error("Failed to restart STT:", e);
+          setTimeout(() => {
+            if (isAudioOn) {
+              startSpeechRecognition();
+            }
+          }, 1000);
+        }
       }
     };
 
-    recognition.start();
-    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+      recognitionRef.current = recognition;
+    } catch (e) {
+      console.error("Failed to start STT:", e);
+    }
   };
 
   const stopSpeechRecognition = () => {
@@ -417,10 +478,14 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
   };
 
   const handleLanguageChange = (e) => {
-    setSelectedLanguage(e.target.value);
+    const newLanguage = e.target.value;
+    setSelectedLanguage(newLanguage);
+
     if (isAudioOn) {
       stopSpeechRecognition();
-      startSpeechRecognition();
+      setTimeout(() => {
+        startSpeechRecognition();
+      }, 100);
     }
   };
 
@@ -468,14 +533,18 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
               Start Call
             </button>
           )}
+
           {callState === "receiving" && (
             <div className="call-request">
               <p>Incoming call...</p>
-              <button onClick={acceptCall} className="chat-button">
+              <button onClick={acceptCall} className="chat-button accept">
                 Accept
               </button>
               <button
-                onClick={() => setCallState("idle")}
+                onClick={() => {
+                  setCallState("idle");
+                  cleanupCall();
+                }}
                 className="chat-button reject"
               >
                 Decline
@@ -499,44 +568,83 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
           )}
 
           {callState === "connected" && (
-            <>
-              <button onClick={endCall} className="chat-button">
+            <div className="active-call-controls">
+              <button onClick={endCall} className="chat-button end-call">
                 End Call
               </button>
               <button onClick={toggleMute} className="chat-button">
                 {isMuted ? "Unmute" : "Mute"}
               </button>
-            </>
+            </div>
           )}
 
-          <div className="volume-display">
-            <h3>Your Voice Volume: {Math.round(localVolume)}</h3>
-            <h3>Remote Voice Volume: {Math.round(remoteVolume)}</h3>
-          </div>
+          {isAudioOn && (
+            <>
+              <div className="volume-display">
+                <div className="volume-meter">
+                  <h3>Your Voice Volume:</h3>
+                  <div
+                    className="volume-bar"
+                    style={{
+                      width: `${Math.min(100, localVolume)}%`,
+                      backgroundColor: `hsl(${120 - localVolume}, 80%, 50%)`,
+                    }}
+                  />
+                  <span>{Math.round(localVolume)}%</span>
+                </div>
+                <div className="volume-meter">
+                  <h3>Remote Voice Volume:</h3>
+                  <div
+                    className="volume-bar"
+                    style={{
+                      width: `${Math.min(100, remoteVolume)}%`,
+                      backgroundColor: `hsl(${120 - remoteVolume}, 80%, 50%)`,
+                    }}
+                  />
+                  <span>{Math.round(remoteVolume)}%</span>
+                </div>
+              </div>
 
-          <div className="transcript-display">
-            <h3>Transcript:</h3>
-            <p>{transcript}</p>
-          </div>
+              <div className="language-select">
+                <h3>음성 인식 언어:</h3>
+                <select
+                  value={selectedLanguage}
+                  onChange={handleLanguageChange}
+                  className="language-dropdown"
+                >
+                  {languages.map((language) => (
+                    <option key={language.code} value={language.code}>
+                      {language.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-          <div className="language-select">
-            <h3>Select Language:</h3>
-            <select
-              value={selectedLanguage}
-              onChange={handleLanguageChange}
-              className="language-dropdown"
-            >
-              {languages.map((language) => (
-                <option key={language.code} value={language.code}>
-                  {language.label}
-                </option>
-              ))}
-            </select>
-          </div>
+              <div className="transcript-display">
+                <h3>음성 인식 결과:</h3>
+                <div
+                  className="transcript-text"
+                  style={{
+                    whiteSpace: "pre-wrap",
+                    maxHeight: "200px",
+                    overflowY: "auto",
+                  }}
+                >
+                  {transcript}
+                </div>
+                <button
+                  onClick={() => setTranscript("")}
+                  className="chat-button clear-transcript"
+                >
+                  Clear Text
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
-      <div className="audio-section" style={{ display: "none" }}>
+      <div className="audio-elements" style={{ display: "none" }}>
         <audio ref={localAudioRef} autoPlay muted></audio>
         <audio ref={remoteAudioRef} autoPlay></audio>
       </div>

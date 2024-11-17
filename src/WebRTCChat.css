@@ -108,4 +108,149 @@
     max-height: 100px;
     overflow-y: auto;
   }
+  .voice-chat-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  }
   
+  .voice-chat-title {
+    text-align: center;
+    color: #333;
+    margin-bottom: 30px;
+  }
+  
+  .join-room-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+  }
+  
+  .room-input {
+    padding: 10px 15px;
+    font-size: 16px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    width: 100%;
+    max-width: 300px;
+  }
+  
+  .chat-button {
+    padding: 10px 20px;
+    font-size: 16px;
+    border: none;
+    border-radius: 8px;
+    background-color: #4CAF50;
+    color: white;
+    cursor: pointer;
+    transition: background-color 0.3s;
+  }
+  
+  .chat-button:hover {
+    background-color: #45a049;
+  }
+  
+  .chat-button:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+  }
+  
+  .reject {
+    background-color: #f44336;
+  }
+  
+  .reject:hover {
+    background-color: #da190b;
+  }
+  
+  .end-call {
+    background-color: #f44336;
+  }
+  
+  .accept {
+    background-color: #4CAF50;
+  }
+  
+  .clear-transcript {
+    background-color: #ff4444;
+  }
+  
+  .clear-transcript:hover {
+    background-color: #cc0000;
+  }
+  
+  .chat-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  
+  .connection-status {
+    text-align: center;
+    padding: 10px;
+    background-color: #f5f5f5;
+    border-radius: 8px;
+    margin: 10px 0;
+  }
+  
+  .call-request, .call-status, .active-call-controls {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    align-items: center;
+  }
+  
+  .volume-display {
+    background-color: #f5f5f5;
+    padding: 15px;
+    border-radius: 8px;
+    margin: 10px 0;
+  }
+  
+  .volume-meter {
+    margin: 10px 0;
+  }
+  
+  .volume-bar {
+    height: 20px;
+    background-color: #4CAF50;
+    border-radius: 10px;
+    transition: width 0.3s ease;
+  }
+  
+  .transcript-display {
+    background-color: #f5f5f5;
+    padding: 15px;
+    border-radius: 8px;
+    margin: 10px 0;
+  }
+  
+  .transcript-text {
+    background-color: white;
+    padding: 15px;
+    border-radius: 4px;
+    margin: 10px 0;
+    border: 1px solid #ddd;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  
+  .language-select {
+    margin: 20px 0;
+  }
+  
+  .language-dropdown {
+    padding: 8px;
+    font-size: 16px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    width: 200px;
+    margin-top: 10px;
+  }
+  
+  .audio-elements {
+    position: absolute;
+    visibility: hidden;
+  }
