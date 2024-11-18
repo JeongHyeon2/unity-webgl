@@ -118,6 +118,7 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
       console.log("WebSocket connected");
     };
 
+    // WebSocket onmessage 핸들러 부분을 다음과 같이 수정합니다
     webSocket.onmessage = async (message) => {
       const data = JSON.parse(message.data);
 
@@ -129,6 +130,7 @@ const VoiceChat = ({ roomId: initialRoomId }) => {
         case "call-accept":
           setRemoteReady(true);
           if (callState === "calling") {
+            setCallState("connected"); // 여기에 상태 변경 추가
             await startCall();
           }
           break;
